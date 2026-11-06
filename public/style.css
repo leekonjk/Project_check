@@ -41,6 +41,7 @@ pre { white-space: pre-wrap; }
 .tag { display: inline-block; padding: .15rem .5rem; border-radius: .3rem; background: #e8f3eb; color: #215e42; font-size: .82rem; font-weight: 650; }
 :focus-visible { outline: 3px solid #197fb3; outline-offset: 3px; }
 .table-scroll { overflow-x: auto; }
+.table-hint { display: none; }
 table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
 th, td { padding: .65rem; text-align: right; border-bottom: 1px solid var(--line); white-space: nowrap; }
 thead { background: #f1f5f3; }
@@ -56,6 +57,7 @@ th:first-child { text-align: left; }
 .app-label { margin: 1.4rem 0 .9rem; padding: .75rem; border-radius: .4rem; background: #1e4538; font-weight: 650; }
 .app-label span { color: #bee982; }
 .sidebar nav { display: grid; gap: .15rem; }
+.mobile-nav { display: none; }
 .sidebar nav a { padding: .55rem .65rem; border-radius: .35rem; color: #c8dbd1; font-weight: 500; text-decoration: none; }
 .sidebar nav a:hover, .sidebar nav a[aria-current="page"] { background: #1e4538; color: #fff; }
 .sidebar nav a[aria-current="page"] { box-shadow: inset -4px 0 #bee982; }
@@ -70,7 +72,7 @@ th:first-child { text-align: left; }
 .page-heading p { color: var(--muted); }
 .filter-bar p { margin-bottom: 0; }
 .metric-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .85rem; margin-block: 1.25rem; }
-.metric-grid section, .analytics-grid section, .placement-grid section, .report-grid section { margin: 0; }
+.metric-grid section, .analytics-grid section, .placement-grid section, .report-grid section { margin: 0; min-width: 0; }
 .metric-card p { color: var(--muted); }
 .metric-card strong { display: block; font-size: clamp(1.25rem, 2.4vw, 2.1rem); font-weight: 570; font-variant-numeric: tabular-nums; }
 .analytics-grid, .placement-grid, .report-grid { display: grid; gap: 1.1rem; margin-block: 1rem; }
@@ -86,6 +88,11 @@ progress::-moz-progress-bar { border-radius: 1rem; background: var(--green); }
 .earnings-chart { display: block; width: 100%; min-height: 135px; }
 .chart-grid { stroke: var(--line); }
 .chart-line { stroke: var(--green); stroke-width: 2.5; fill: none; }
+.chart-tick { fill: var(--muted); font-size: 16px; }
+.overview-start { max-width: 42rem; }
+.overview-start h2 { margin-top: .7rem; }
+.overview-actions { display: flex; flex-wrap: wrap; gap: .65rem; margin-top: 1rem; }
+.tag-test { background: #fff3db; color: #75470b; }
 .empty-state { display: grid; align-items: center; min-height: 9rem; padding: 1rem; border: 1px dashed var(--line); border-radius: .4rem; color: var(--muted); text-align: center; }
 .pitch { display: grid; gap: .75rem; padding: 1rem; border-radius: .55rem; background: var(--forest); color: #e3f4e8; }
 .pitch > span { justify-self: center; word-spacing: .6em; }
@@ -120,9 +127,16 @@ progress::-moz-progress-bar { border-radius: 1rem; background: var(--green); }
 @media (max-width: 720px) {
     .workspace { display: block; }
     .sidebar { position: static; min-height: 0; max-height: none; }
-    .sidebar nav { display: flex; flex-wrap: nowrap; overflow-x: auto; padding-block: .25rem; }
-    .sidebar nav a { flex: none; }
-    .nav-group, .app-label, .operator-email { display: none; }
-    .report-grid { grid-template-columns: 1fr; }
+    .sidebar .desktop-nav, .app-label, .operator-email { display: none; }
+    .mobile-nav { display: block; margin-top: .6rem; }
+    .mobile-nav summary { padding: .55rem .65rem; border-radius: .35rem; background: #1e4538; color: #fff; cursor: pointer; }
+    .mobile-nav summary span { float: right; color: #c8dbd1; }
+    .mobile-nav nav { margin-top: .35rem; }
+    .report-grid { grid-template-columns: minmax(0, 1fr); }
+    .table-hint { display: block; margin: .45rem 0; font-size: .85rem; }
+    .table-scroll th:first-child { position: sticky; left: 0; background: var(--surface); min-width: 7rem; max-width: 8.5rem; white-space: normal; overflow-wrap: anywhere; }
+    .table-scroll thead th:first-child { background: #f1f5f3; }
+    .chart-tick { font-size: 22px; }
     .metric-card { padding: .8rem; }
+    .login button { width: 100%; }
 }

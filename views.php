@@ -17,11 +17,11 @@ function csrf(): void
     echo '<input type="hidden" name="csrf" value="' . h($_SESSION['csrf']) . '">';
 }
 
-function page(string $title, callable $content): void
+function page(string $title, callable $content, string $brand = 'Football Admin'): void
 {
     echo '<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-        <link rel="stylesheet" href="/style.css"><title>' . h($title) . ' | Football Admin</title>
-        <main><header><p class="eyebrow">Football Admin</p><h1>' . h($title) . '</h1></header>';
+        <link rel="stylesheet" href="/style.css"><title>' . h($title) . ' | ' . h($brand) . '</title>
+        <main><header><p class="eyebrow">' . h($brand) . '</p><h1>' . h($title) . '</h1></header>';
     $content();
     echo '</main></html>';
 }
@@ -56,7 +56,7 @@ function playerAuthPage(bool $signUp, string $error, bool $registered): void
         echo '<button>' . ($signUp ? 'Create account' : 'Sign in') . '</button></form>';
         echo $signUp ? '<p><a href="/login">Already have an account? Sign in</a></p>'
             : '<p><a href="/register">Create a player account</a></p><p><a href="/admin/login">Admin sign in</a></p>';
-    });
+    }, 'Football Player Account');
 }
 
 function playerAccountPage(array $account): void
@@ -66,7 +66,7 @@ function playerAccountPage(array $account): void
               <form method="post" action="/logout">';
         csrf();
         echo '<button>Sign out</button></form></section>';
-    });
+    }, 'Football Player Account');
 }
 
 function adminPage(string $title, string $description, string $active, array $admin, callable $content): void
@@ -88,15 +88,18 @@ function adminPage(string $title, string $description, string $active, array $ad
           <body class="workspace"><a class="skip-link" href="#workspace-content">Skip to content</a>
           <aside class="sidebar"><a class="brand" href="/admin"><span class="brand-mark" aria-hidden="true">◴</span>
           <span>Football Admin<small>Game operations</small></span></a>
-          <p class="app-label"><span aria-hidden="true">▣</span> Football Android</p>
-          <nav aria-label="Dashboard">';
+          <p class="app-label"><span aria-hidden="true">▣</span> Football Android</p>';
+    $links = '';
     foreach ($items as $key => [$label, $url]) {
         if ($key === 'tournaments') {
-            echo '<small class="nav-group">Game administration</small>';
+            $links .= '<small class="nav-group">Game administration</small>';
         }
-        echo '<a href="' . h($url) . '"' . ($active === $key ? ' aria-current="page"' : '') . '>' . h($label) . '</a>';
+        $links .= '<a href="' . h($url) . '"' . ($active === $key ? ' aria-current="page"' : '') . '>' . h($label) . '</a>';
     }
-    echo '</nav></aside><div class="workspace-body"><header class="toolbar"><span>Workspace <span aria-hidden="true">/</span> ' .
+    echo '<nav class="desktop-nav" aria-label="Dashboard">' . $links . '</nav>
+          <details class="mobile-nav"><summary>Menu <span>' . h($items[$active][0]) .
+        '</span></summary><nav aria-label="Dashboard">' . $links . '</nav></details>
+          </aside><div class="workspace-body"><header class="toolbar"><span>Workspace <span aria-hidden="true">/</span> ' .
         h($title) . '</span><form method="post" action="/admin/logout" class="operator">';
     csrf();
     echo '<span class="operator-email">' . h($admin['email']) . '</span><button class="secondary">Sign out</button></form></header>
@@ -113,9 +116,13 @@ function overviewPage(array $admin, bool $demo): void
         : ($cached['data']['totals'] ?? null);
     $currency = $demo ? 'USD' : ($cached['data']['currency'] ?? '');
     $period = $demo ? '7 complete days · Sample figures' : ($cached['data']['period'] ?? 'Choose a period in Reports');
-    $days = $demo ? [155.20, 164.80, 172.80, 191.60, 198.20, 182.10, 183.90] : [];
+    $days = $demo ? array_map(
+        static fn ($value, $index) => ['earnings' => $value, 'label' => 'Day ' . ($index + 1)],
+        [155200000, 164800000, 172800000, 191600000, 198200000, 182100000, 183900000],
+        range(0, 6)
+    ) : [];
     if (($cached['dimension'] ?? '') === 'DATE') {
-        $days = array_column($cached['data']['rows'], 'earnings');
+        $days = $cached['data']['rows'];
     }
     $formats = $demo ? [
         ['label' => 'Banner', 'earnings' => 210000000, 'impressions' => 300000],
@@ -135,18 +142,27 @@ function overviewPage(array $admin, bool $demo): void
 
     adminPage('Overview', 'The complete picture of your game’s ad performance.', 'overview', $admin,
         function () use ($demo, $cached, $totals, $currency, $period, $days, $formats, $countries) {
+            if (!$demo && (!admobConfigured() || !$cached)) {
+                $configured = admobConfigured();
+                echo '<section class="overview-start"><span class="tag">' .
+                    ($configured ? 'AdMob Network' : 'Reporting disconnected') . '</span><h2>' .
+                    ($configured ? 'Generate your first AdMob report' : 'Connect AdMob to see ad performance') .
+                    '</h2><p>' . ($configured ? 'Choose a reporting period to see earnings and delivery for Football Android.'
+                        : 'Connect your AdMob account to see estimated earnings, impressions, and ad delivery.') .
+                    '</p><div class="overview-actions"><a class="button" href="' .
+                    ($configured ? '/admin/reports' : '/admin?view=settings') . '">' .
+                    ($configured ? 'Generate first report' : 'Connect AdMob') .
+                    '</a><a class="button secondary" href="/admin?demo=1">Preview demo data</a></div></section>';
+                return;
+            }
             echo '<section class="filter-bar"><div class="toolbar-actions"><div><span class="tag">' . ($demo ? 'Demo data' : 'AdMob Network') .
                 '</span><p>' . h($period) . '</p></div><div class="toolbar-actions"><a class="button secondary" href="' .
                 ($demo ? '/admin' : '/admin?demo=1') . '">' . ($demo ? 'Exit demo' : 'Preview demo data') .
                 '</a><a class="button" href="/admin/reports">Build a report</a></div></div></section>';
-            if ($demo || !$cached) {
-                echo '<p class="notice">' . ($demo ? 'Sample figures for preview. Banner settings use the actual PHP configuration.'
-                    : 'Generate an AdMob report to populate this overview.') . '</p>';
+            if ($demo) {
+                echo '<p class="notice">Sample figures for preview. Banner settings use the actual PHP configuration.</p>';
             } else {
                 echo '<p class="notice">Report generated ' . h($cached['generated']) . ' UTC. Totals reflect the selected period.</p>';
-            }
-            if (!$demo && !admobConfigured()) {
-                echo '<p class="notice warning">AdMob reporting is disconnected. <a href="/admin?view=settings">View connection status</a></p>';
             }
             $money = static fn ($value) => $currency . ' ' . number_format($value, 2);
             $values = $totals ? [
@@ -160,15 +176,17 @@ function overviewPage(array $admin, bool $demo): void
             }
             echo '</div><div class="analytics-grid"><section><div class="toolbar-actions"><h2>Daily performance</h2>
                 <a href="/admin/reports?group=DATE">Daily report</a></div><p class="muted">Estimated earnings</p>';
-            earningsChart($days);
+            earningsChart($days, $currency);
             echo '</section><section><h2>Ad delivery funnel</h2>';
-            $previous = $totals['requests'] ?? 0;
-            foreach (['requests' => 'Ad requests', 'matched' => 'Matched requests', 'impressions' => 'Impressions', 'clicks' => 'Clicks'] as $key => $label) {
+            $requests = $totals['requests'] ?? 0;
+            $previous = $requests;
+            foreach (['requests' => ['Ad requests', 'all requests'], 'matched' => ['Matched requests', 'ad requests'],
+                'impressions' => ['Impressions', 'matched requests'], 'clicks' => ['Clicks', 'impressions']] as $key => [$label, $base]) {
                 $count = $totals[$key] ?? 0;
                 echo '<div class="funnel-step"><div class="toolbar-actions"><span>' . h($label) . '</span><strong>' .
                     ($totals ? number_format($count) : '—') . '</strong></div><progress aria-label="' . h($label) .
-                    '" value="' . min($count, $previous) . '" max="' . max(1, $previous) . '"></progress><small>' .
-                    reportRate($count, $previous) . '</small></div>';
+                    ' as a share of all ad requests" value="' . min($count, $requests) . '" max="' . max(1, $requests) .
+                    '"></progress><small>' . ($previous > 0 ? reportRate($count, $previous) . ' of ' . $base : '—') . '</small></div>';
                 $previous = $count;
             }
             echo '</section></div>';
@@ -177,21 +195,45 @@ function overviewPage(array $admin, bool $demo): void
         });
 }
 
-function earningsChart(array $series): void
+function earningsChart(array $rows, string $currency): void
 {
-    if (count($series) < 2) {
+    if (count($rows) < 2) {
         echo '<p class="empty-state">Generate a daily report with at least two days of activity to see the chart.</p>';
         return;
     }
+    $series = array_column($rows, 'earnings');
     $low = min(0, min($series));
     $span = max(1, max($series) - $low);
+    $last = count($series) - 1;
+    $x = static fn (int $index): float => 78 + $index * 503 / $last;
     $points = [];
     foreach ($series as $i => $value) {
-        $points[] = round(12 + $i * 576 / (count($series) - 1), 2) . ',' . round(178 - 156 * ($value - $low) / $span, 2);
+        $points[] = round($x($i), 2) . ',' . round(178 - 156 * ($value - $low) / $span, 2);
     }
-    echo '<svg class="earnings-chart" viewBox="0 0 600 195" role="img" aria-label="Daily estimated earnings trend">
-          <path class="chart-grid" d="M12 22H588 M12 74H588 M12 126H588 M12 178H588"/>
-          <polyline class="chart-line" points="' . h(implode(' ', $points)) . '"/></svg>';
+    echo '<svg class="earnings-chart" viewBox="0 0 600 208" role="img" aria-label="Daily estimated earnings in ' . h($currency) . '">
+          <path class="chart-grid" d="M78 22H581 M78 74H581 M78 126H581 M78 178H581"/>
+          <polyline class="chart-line" points="' . h(implode(' ', $points)) . '"/>';
+    foreach ([0, 1, 2, 3] as $tick) {
+        $value = ($low + $span * (3 - $tick) / 3) / 1000000;
+        $label = abs($value) >= 1000 ? number_format($value / 1000, 1) . 'k' : number_format($value, abs($value) < 10 ? 2 : 0);
+        echo '<text class="chart-tick" x="70" y="' . (27 + $tick * 52) . '" text-anchor="end">' .
+            h($label) . '</text>';
+    }
+    foreach (array_unique([0, intdiv($last, 2), $last]) as $index) {
+        $label = $rows[$index]['label'];
+        if (preg_match('/^[0-9]{8}$/D', $label) && ($date = DateTimeImmutable::createFromFormat('!Ymd', $label))) {
+            $label = $date->format('M j');
+        }
+        $anchor = $index === 0 ? 'start' : ($index === $last ? 'end' : 'middle');
+        echo '<text class="chart-tick" x="' . $x($index) . '" y="202" text-anchor="' . $anchor . '">' . h($label) . '</text>';
+    }
+    echo '</svg><p class="muted">Estimated earnings · ' . h($currency) . '</p>';
+}
+
+function scrollableTable(string $label): void
+{
+    echo '<p class="table-hint muted">Scroll across for more metrics.</p><div class="table-scroll" role="region" aria-label="' .
+        h($label) . '" tabindex="0">';
 }
 
 function overviewBreakdown(string $title, string $dimension, array $rows, string $currency): void
@@ -202,7 +244,8 @@ function overviewBreakdown(string $title, string $dimension, array $rows, string
         echo '<p class="muted">Generate this breakdown in Reports to see results here.</p></section>';
         return;
     }
-    echo '<div class="table-scroll"><table><thead><tr><th scope="col">Name</th><th scope="col">Est. earnings (' . h($currency) .
+    scrollableTable($title);
+    echo '<table><thead><tr><th scope="col">Name</th><th scope="col">Est. earnings (' . h($currency) .
         ')</th><th scope="col">Impressions</th><th scope="col">eCPM</th></tr></thead><tbody>';
     foreach ($rows as $row) {
         $ecpm = $row['impressions'] ? number_format($row['earnings'] / 1000 / $row['impressions'], 2) : '—';
@@ -228,6 +271,8 @@ function placementsPage(array $admin, array $current, ?array $proposed, bool $sa
             }
             echo '<p class="notice warning">Publishing updates the Android banner endpoint. This Unity test build accepts Google’s fixed banner test ad unit.</p>
                 <div class="placement-grid"><section><h2>Android banner configuration</h2><p><span class="tag">Version ' . h($version) .
+                '</span> <span class="tag tag-test">' .
+                ($current['banner_ad_unit_id'] === 'ca-app-pub-3940256099942544/6300978111' ? 'Test configuration' : 'Custom ad unit') .
                 '</span></p><form method="post" action="/admin">';
             csrf();
             echo '<input type="hidden" name="version" value="' . h($version) . '">';
@@ -278,7 +323,7 @@ function infoPage(array $admin, string $view): void
                 echo '<p>' . h($report['currency']) . ' <strong>' . number_format($report['totals']['earnings'] / 1000000, 2) .
                     '</strong> · ' . h($report['period']) . '</p>';
                 if ($cached['dimension'] === 'DATE') {
-                    earningsChart(array_column($report['rows'], 'earnings'));
+                    earningsChart($report['rows'], $report['currency']);
                 }
             }
             echo '</section>';
@@ -318,7 +363,10 @@ function infoPage(array $admin, string $view): void
         $configured = admobConfigured();
         echo '<div class="analytics-grid"><section><h2>AdMob Network</h2><p class="notice' . ($configured ? '' : ' warning') . '">' .
             ($configured ? 'Reporting credentials configured. Generate a report to check the connection.' : 'Reporting disconnected.') .
-            '</p><a href="/admin/reports">Open reports</a></section><section><h2>Android banner</h2>
+            '</p>' . ($configured ? '<a href="/admin/reports">Open reports</a>'
+                : '<p>Add the AdMob reporting credentials in your private server configuration.</p>
+                   <a class="button secondary" href="https://github.com/leekonjk/Project_check#connect-admob-reporting">View AdMob setup instructions</a>') .
+            '</section><section><h2>Android banner</h2>
             <p>Inspect the PHP settings returned to the Unity app.</p>
             <a href="/api/v1/ads/config?platform=android">Check config endpoint</a></section></div>';
     });
@@ -478,7 +526,8 @@ function renderAdmobPage(array $admin, ?array $report, int $days, string $dimens
             echo '<p>AdMob returned no activity for this app and period.</p></section></div>';
             return;
         }
-        echo '<div class="table-scroll"><table><thead><tr><th scope="col">Breakdown</th><th scope="col">Est. earnings</th>
+        scrollableTable($presets[$dimension]);
+        echo '<table><thead><tr><th scope="col">Breakdown</th><th scope="col">Est. earnings</th>
             <th scope="col">Requests</th><th scope="col">Matched</th><th scope="col">Impressions</th><th scope="col">Clicks</th>
             <th scope="col">eCPM</th><th scope="col">Match rate</th><th scope="col">Show rate</th><th scope="col">CTR</th></tr></thead><tbody>';
         foreach ($report['rows'] as $item) {
