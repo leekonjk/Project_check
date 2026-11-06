@@ -1,10 +1,14 @@
 <?php
 declare(strict_types=1);
 
-require __DIR__ . '/../app.php';
-require __DIR__ . '/../api.php';
-require __DIR__ . '/../admin.php';
-require __DIR__ . '/../views.php';
+$appDir = dirname(__DIR__);
+if (is_file($appDir . '/football-app/app.php')) {
+    $appDir .= '/football-app';
+}
+require $appDir . '/app.php';
+require $appDir . '/api.php';
+require $appDir . '/admin.php';
+require $appDir . '/views.php';
 
 header('Cache-Control: no-store');
 header('X-Content-Type-Options: nosniff');
@@ -14,7 +18,7 @@ header("Content-Security-Policy: default-src 'none'; style-src 'self'; form-acti
 $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 $method = $_SERVER['REQUEST_METHOD'];
 $isApi = is_string($path) && str_starts_with($path, '/api/');
-$secure = str_starts_with(getenv('APP_ORIGIN') ?: '', 'https://');
+$secure = str_starts_with(setting('APP_ORIGIN'), 'https://');
 if ($secure) {
     header('Strict-Transport-Security: max-age=31536000');
 }

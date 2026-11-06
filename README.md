@@ -1,6 +1,26 @@
 # Project_check
 
-Standalone PHP 8.4 application with Nginx, MySQL, an admin dashboard, and a JSON API for Unity.
+Standalone PHP application with MySQL, an admin dashboard, and a JSON API for Unity. Deploy directly to shared hosting or use the optional Nginx Docker stack.
+
+## Shared hosting without Docker
+
+Use a domain or subdomain with HTTPS, PHP 8.3 or newer with PDO MySQL and Argon2id, MySQL or MariaDB, and URL rewriting. Use the PHP version and database credentials provided by the host. The app expects to live at the root of its domain or subdomain.
+
+1. Create a database and user in the hosting panel and grant that user access to the database. Import `schema.sql` into the empty database using phpMyAdmin or the host's database tool.
+2. In your account home directory, create `football-app` next to `public_html`. Upload `app.php`, `api.php`, `admin.php`, `views.php`, and `create-admin.php` to `football-app`.
+3. Copy `config.shared.example.php` to `football-app/config.local.php`. Fill in the provider's database host, complete database name, username, password, and public HTTPS origin. Keep this file readable only by your account and its PHP process.
+4. Upload the contents of `public/` to `public_html`, including the hidden `.htaccess` file. Preserve any PHP handler directives already in the host's `.htaccess` and add the app's rewrite rules before any existing catch-all rules. On an Nginx-only host, ask the provider to route requests other than `/style.css` to `index.php`, forward the Authorization header to PHP, and use this public directory as the document root.
+5. Create the admin from the hosting terminal before sharing the site. Run the commands below from your account home directory.
+
+```sh
+read -rs -p 'New admin password (at least 12 characters): ' admin_password
+printf '%s' "$admin_password" | php football-app/create-admin.php admin@example.com
+unset admin_password
+```
+
+If the host has no terminal, generate an Argon2id password hash using PHP on your computer and insert the first user with that hash and `is_admin = 1` through phpMyAdmin. Use a fresh admin email and a unique password of 12–128 bytes. The browser has no admin setup page.
+
+Sign in at `/admin`, then check `/api/v1/ads/config?platform=android` and use the HTTPS URL in Unity. Enable HTTPS redirects in the hosting panel and configure the host's firewall or proxy to rate-limit sign-in and registration. The bundled Nginx rate limits apply to the Docker setup.
 
 ## Local test
 

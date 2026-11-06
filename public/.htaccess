@@ -1,0 +1,4 @@
+RewriteEngine On
+RewriteRule ^ - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+RewriteRule ^(?:index\.php|style\.css)$ - [L]
+RewriteRule ^ index.php [L]

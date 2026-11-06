@@ -8,13 +8,26 @@ function fail(int $status, string $message): never
     throw new HttpError($message, $status);
 }
 
+function setting(string $key, string $default = ''): string
+{
+    $env = getenv($key);
+    if ($env !== false) {
+        return $env;
+    }
+
+    static $settings;
+    $file = __DIR__ . '/config.local.php';
+    $settings ??= is_file($file) ? require $file : [];
+    return $settings[$key] ?? $default;
+}
+
 function db(): PDO
 {
     static $pdo;
     return $pdo ??= new PDO(
-        'mysql:host=' . (getenv('DB_HOST') ?: '127.0.0.1') . ';dbname=' . getenv('MYSQL_DATABASE') . ';charset=utf8mb4',
-        getenv('MYSQL_USER') ?: '',
-        getenv('MYSQL_PASSWORD') ?: '',
+        'mysql:host=' . setting('DB_HOST', '127.0.0.1') . ';dbname=' . setting('MYSQL_DATABASE') . ';charset=utf8mb4',
+        setting('MYSQL_USER'),
+        setting('MYSQL_PASSWORD'),
         [PDO::ATTR_EMULATE_PREPARES => false, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]
     );
 }
@@ -119,7 +132,8 @@ function newTokens(int $userId, ?int $sessionId = null): array
 
 function player(): array
 {
-    if (!preg_match('/^Bearer ([a-f0-9]{64})$/iD', $_SERVER['HTTP_AUTHORIZATION'] ?? '', $match)) {
+    $authorization = $_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '';
+    if (!preg_match('/^Bearer ([a-f0-9]{64})$/iD', $authorization, $match)) {
         fail(401, 'Sign in to continue.');
     }
     return row('SELECT users.id,users.email,sessions.id AS session_id FROM sessions JOIN users ON users.id=sessions.user_id
