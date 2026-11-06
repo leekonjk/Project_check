@@ -45,7 +45,7 @@ function dashboard(array $admin, ?array $selected): void
     $history = query('SELECT audit_log.*, users.email FROM audit_log JOIN users ON users.id=audit_log.admin_id
                       ORDER BY audit_log.id DESC LIMIT 30')->fetchAll();
     page('Tournament dashboard', function () use ($admin, $ads, $events, $pending, $history, $selected) {
-        echo '<nav><a href="#tournaments">Tournaments</a><a href="#results">Result review</a><a href="#ads">Ad settings</a><a href="#audit">Audit history</a></nav>
+        echo '<nav><a href="/admin/reports">AdMob reports</a><a href="#tournaments">Tournaments</a><a href="#results">Result review</a><a href="#ads">Ad settings</a><a href="#audit">Audit history</a></nav>
               <form method="post" action="/admin/logout" class="inline account">';
         csrf();
         echo '<span>' . h($admin['email']) . '</span><button>Sign out</button></form>
@@ -103,6 +103,71 @@ function dashboard(array $admin, ?array $selected): void
         }
         echo '</ul></section>';
     });
+}
+
+function renderAdmobPage(?array $report, int $days, string $dimension): void
+{
+    page('AdMob reports', function () use ($report, $days, $dimension) {
+        echo '<nav><a href="/admin">Dashboard</a></nav><section><h2>AdMob Network</h2>
+            <p>Ad delivery and estimated earnings for the configured Android app.</p>';
+        if (!admobConfigured()) {
+            echo '<p>Reporting is disconnected. Configure read-only AdMob credentials on the server.</p></section>';
+            return;
+        }
+        echo '<form class="inline" method="post" action="/admin/reports">';
+        csrf();
+        echo '<label>Period<select name="range">';
+        foreach ([7, 30] as $range) {
+            echo '<option value="' . $range . '"' . ($range === $days ? ' selected' : '') . '>Last ' . $range . ' complete days</option>';
+        }
+        echo '</select></label><label>Breakdown<select name="group">';
+        foreach (['DATE' => 'Date', 'FORMAT' => 'Ad format', 'COUNTRY' => 'Country', 'AD_UNIT' => 'Ad unit'] as $value => $label) {
+            echo '<option value="' . $value . '"' . ($value === $dimension ? ' selected' : '') . '>' . h($label) . '</option>';
+        }
+        echo '</select></label><button>Generate report</button></form></section>';
+        if ($report === null) {
+            return;
+        }
+        echo '<section><h2>Report results</h2><p>' . h($report['period']) . ' · ' . h($report['currency']) . '</p>';
+        if ($report['warnings']) {
+            echo '<p role="status">Google flagged this report. Check AdMob before relying on the totals.</p>';
+        }
+        if (!$report['rows']) {
+            echo '<p>AdMob returned no activity for this app and period.</p></section>';
+            return;
+        }
+        echo '<div class="table-scroll"><table><thead><tr><th scope="col">Breakdown</th><th scope="col">Est. earnings</th>
+            <th scope="col">Requests</th><th scope="col">Matched</th><th scope="col">Impressions</th><th scope="col">Clicks</th>
+            <th scope="col">eCPM</th><th scope="col">Match rate</th><th scope="col">Show rate</th><th scope="col">CTR</th></tr></thead><tbody>';
+        foreach ($report['rows'] as $item) {
+            renderReportRow($item['label'], $item);
+        }
+        echo '</tbody><tfoot>';
+        renderReportRow('Total', $report['totals']);
+        echo '</tfoot></table></div></section>';
+    });
+}
+
+function renderReportRow(string $label, array $counts): void
+{
+    $ratio = static fn ($count, $total) => $total > 0 ? number_format($count / $total * 100, 2) . '%' : '—';
+    $earnings = $counts['earnings'] / 1000000;
+    $cells = [
+        number_format($earnings, 2),
+        number_format($counts['requests']),
+        number_format($counts['matched']),
+        number_format($counts['impressions']),
+        number_format($counts['clicks']),
+        $counts['impressions'] > 0 ? number_format($earnings / $counts['impressions'] * 1000, 2) : '—',
+        $ratio($counts['matched'], $counts['requests']),
+        $ratio($counts['impressions'], $counts['matched']),
+        $ratio($counts['clicks'], $counts['impressions']),
+    ];
+    echo '<tr><th scope="row">' . h($label) . '</th>';
+    foreach ($cells as $cell) {
+        echo '<td>' . h($cell) . '</td>';
+    }
+    echo '</tr>';
 }
 
 function renderBracket(array $event): void

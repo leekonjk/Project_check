@@ -9,6 +9,7 @@ require $appDir . '/app.php';
 require $appDir . '/api.php';
 require $appDir . '/admin.php';
 require $appDir . '/views.php';
+require $appDir . '/admob.php';
 
 header('Cache-Control: no-store');
 header('X-Content-Type-Options: nosniff');
@@ -27,8 +28,12 @@ try {
     if ($isApi) {
         api($path, $method);
     }
-    if (!in_array($path, ['/', '/admin/login', '/admin', '/admin/logout'], true)) {
+    if (!in_array($path, ['/', '/admin/login', '/admin', '/admin/logout', '/admin/reports'], true)) {
         fail(404, 'Page unavailable.');
+    }
+    $allowedIps = setting('ADMIN_ALLOWED_IPS');
+    if ($allowedIps !== '' && !in_array($_SERVER['REMOTE_ADDR'] ?? '', array_map('trim', explode(',', $allowedIps)), true)) {
+        fail(403, 'Admin access is restricted.');
     }
     if (!in_array($method, ['GET', 'POST'], true)) {
         fail(405, 'Method not allowed.');
@@ -81,6 +86,27 @@ try {
         session_destroy();
         setcookie(session_name(), '', ['expires' => 1, 'path' => '/', 'secure' => $secure, 'httponly' => true, 'samesite' => 'Strict']);
         redirect('/admin/login');
+    }
+    if ($path === '/admin/reports') {
+        $days = 7;
+        $dimension = 'FORMAT';
+        $report = null;
+        if ($method === 'POST') {
+            $range = $_POST['range'] ?? '';
+            $dimension = $_POST['group'] ?? '';
+            if (!in_array($range, ['7', '30'], true) || !in_array($dimension, ['DATE', 'FORMAT', 'COUNTRY', 'AD_UNIT'], true)) {
+                fail(422, 'Choose a valid report period and breakdown.');
+            }
+            if (($_SESSION['report_allowed_after'] ?? 0) > time()) {
+                fail(429, 'Wait a few seconds before generating another report.');
+            }
+            $_SESSION['report_allowed_after'] = time() + 20;
+            session_write_close();
+            $days = (int)$range;
+            $report = admobReport($days, $dimension);
+        }
+        renderAdmobPage($report, $days, $dimension);
+        exit;
     }
     if ($method === 'POST') {
         adminAction((int)$admin['id']);

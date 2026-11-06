@@ -7,4 +7,10 @@ return [
     'MYSQL_USER' => 'account_football',
     'MYSQL_PASSWORD' => '',
     'APP_ORIGIN' => 'https://football.example.com',
+    'ADMIN_ALLOWED_IPS' => '',
+    'ADMOB_PUBLISHER_ID' => '',
+    'ADMOB_APP_ID' => '',
+    'ADMOB_CLIENT_ID' => '',
+    'ADMOB_CLIENT_SECRET' => '',
+    'ADMOB_REFRESH_TOKEN' => '',
 ];
