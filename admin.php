@@ -18,12 +18,11 @@ function adminAction(int $admin): void
     transaction(function () use ($admin) {
         switch ($_POST['action'] ?? '') {
             case 'banner':
-                $enabled = ($_POST['enabled'] ?? '') === '1';
-                $unit = field($_POST, 'unit', 1, 80);
-                if (!preg_match('~^ca-app-pub-[0-9]+/[0-9]+$~D', $unit)) {
-                    fail(422, 'Invalid banner ad unit ID.');
-                }
+                [$enabled, $unit] = bannerInput();
                 $before = row('SELECT * FROM ad_settings WHERE id=1 FOR UPDATE');
+                if (!$before || (int)$before['version'] !== formId('version')) {
+                    fail(409, 'The banner configuration changed. Review the latest settings before publishing.');
+                }
                 query('UPDATE ad_settings SET version=version+1,banner_enabled=?,banner_ad_unit_id=? WHERE id=1', [(int)$enabled, $unit]);
                 audit($admin, 'banner.update', ['before' => $before, 'enabled' => $enabled, 'unit' => $unit]);
                 break;
@@ -84,6 +83,15 @@ function adminAction(int $admin): void
                 fail(422, 'Unknown action.');
         }
     });
+}
+
+function bannerInput(): array
+{
+    $unit = field($_POST, 'unit', 1, 80);
+    if (!preg_match('~^ca-app-pub-[0-9]+/[0-9]+$~D', $unit)) {
+        fail(422, 'Enter a valid AdMob banner ad unit ID.');
+    }
+    return [($_POST['enabled'] ?? '') === '1', $unit];
 }
 
 function approveResult(int $admin, int $id, string $attemptId, string $reason): void

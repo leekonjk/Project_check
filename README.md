@@ -2,6 +2,10 @@
 
 Standalone PHP application with MySQL, an admin dashboard, and a JSON API for Unity. Deploy directly to shared hosting or use the optional Nginx Docker stack.
 
+Player web routes are `/register`, `/login`, and `/account`. They use the same player accounts as the Unity API. Players choose a password and confirm it at registration. Browser sessions are separate from admin sessions and Unity tokens. The staging account flow currently has no email verification or password recovery.
+
+The admin dashboard starts at `/admin`. The overview uses the last AdMob report generated in the current admin session. Use **Preview demo data** to view the design with sample figures. The Android banner editor under **Placements** lets you review and publish a new version of the PHP configuration.
+
 ## Shared hosting without Docker
 
 Use a domain or subdomain with HTTPS, PHP 8.3 or newer with PDO MySQL and Argon2id, MySQL or MariaDB, and URL rewriting. Use the PHP version and database credentials provided by the host. The app expects to live at the root of its domain or subdomain.

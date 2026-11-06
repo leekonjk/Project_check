@@ -140,3 +140,23 @@ function admobReport(int $days, string $dimension): array
     return parseAdmobReport($response, $dimension, $appId)
         + ['period' => $start->format('Y-m-d') . ' to ' . $end->format('Y-m-d') . ' · Pacific time'];
 }
+
+function exportAdmobCsv(array $cached): never
+{
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="football-admob-report.csv"');
+    $output = fopen('php://output', 'wb');
+    $report = $cached['data'];
+    fputcsv($output, [$cached['dimension'], 'Estimated earnings (' . $report['currency'] . ')',
+        'Requests', 'Matched requests', 'Impressions', 'Clicks', 'Period'], escape: '');
+    foreach ($report['rows'] as $row) {
+        $label = $row['label'];
+        if (preg_match('/^[\s]*[=+@-]/u', $label) || preg_match('/^[\t\r\n]/', $label)) {
+            $label = "'" . $label;
+        }
+        fputcsv($output, [$label, number_format($row['earnings'] / 1000000, 6, '.', ''), $row['requests'],
+            $row['matched'], $row['impressions'], $row['clicks'], $report['period']], escape: '');
+    }
+    fclose($output);
+    exit;
+}

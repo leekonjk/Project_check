@@ -28,6 +28,12 @@ try {
     if ($isApi) {
         api($path, $method);
     }
+    if (!in_array($method, ['GET', 'POST'], true)) {
+        fail(405, 'Method not allowed.');
+    }
+    if (in_array($path, ['/login', '/register', '/account', '/logout'], true)) {
+        playerWeb($path, $method, $secure);
+    }
     if (!in_array($path, ['/', '/admin/login', '/admin', '/admin/logout', '/admin/reports'], true)) {
         fail(404, 'Page unavailable.');
     }
@@ -35,17 +41,9 @@ try {
     if ($allowedIps !== '' && !in_array($_SERVER['REMOTE_ADDR'] ?? '', array_map('trim', explode(',', $allowedIps)), true)) {
         fail(403, 'Admin access is restricted.');
     }
-    if (!in_array($method, ['GET', 'POST'], true)) {
-        fail(405, 'Method not allowed.');
-    }
-    ini_set('session.use_strict_mode', '1');
-    ini_set('session.use_only_cookies', '1');
-    session_name($secure ? '__Host-football_admin' : 'football_admin');
-    session_set_cookie_params(['path' => '/', 'secure' => $secure, 'httponly' => true, 'samesite' => 'Strict']);
-    session_start();
-    $_SESSION['csrf'] ??= bin2hex(random_bytes(32));
-    if ($method === 'POST' && (!is_string($_POST['csrf'] ?? null) || !hash_equals($_SESSION['csrf'], $_POST['csrf']))) {
-        fail(403, 'Your form expired. Reload the page and try again.');
+    startWebSession('admin', $secure);
+    if ($method === 'POST') {
+        checkWebForm();
     }
     $admin = null;
     if (isset($_SESSION['admin']) && ($_SESSION['expires'] ?? 0) > time()) {
@@ -60,7 +58,9 @@ try {
             if (!$user['is_admin']) {
                 fail(401, 'Invalid credentials.');
             }
-            session_regenerate_id(true);
+            if (!session_regenerate_id(true)) {
+                fail(503, 'Could not start your session.');
+            }
             $_SESSION = ['admin' => $user['id'], 'expires' => time() + 1800, 'csrf' => bin2hex(random_bytes(32))];
             redirect('/admin');
         }
@@ -72,45 +72,85 @@ try {
             csrf();
             echo '<label>Email<input required type="email" name="email" autocomplete="username" maxlength="254"></label>
                   <label>Password<input required type="password" name="password" autocomplete="current-password" maxlength="128"></label>
-                  <button>Sign in</button></form>';
+                  <button>Sign in</button></form><p><a href="/login">Player sign in</a></p>';
         });
         exit;
     }
     if (!$admin) {
         redirect('/admin/login');
     }
+    $view = $_GET['view'] ?? 'overview';
     if ($path === '/admin/logout') {
         if ($method !== 'POST') {
             fail(405, 'Method not allowed.');
         }
-        session_destroy();
-        setcookie(session_name(), '', ['expires' => 1, 'path' => '/', 'secure' => $secure, 'httponly' => true, 'samesite' => 'Strict']);
+        endWebSession();
         redirect('/admin/login');
     }
     if ($path === '/admin/reports') {
+        if ($method === 'GET' && ($_GET['download'] ?? '') === 'csv') {
+            $cached = $_SESSION['last_admob_report'] ?? fail(404, 'Generate a report before downloading.');
+            exportAdmobCsv($cached);
+        }
         $days = 7;
-        $dimension = 'FORMAT';
+        $dimensions = ['DATE', 'FORMAT', 'COUNTRY', 'AD_UNIT'];
+        $dimension = in_array($_GET['group'] ?? null, $dimensions, true) ? $_GET['group'] : 'FORMAT';
         $report = null;
         if ($method === 'POST') {
             $range = $_POST['range'] ?? '';
             $dimension = $_POST['group'] ?? '';
-            if (!in_array($range, ['7', '30'], true) || !in_array($dimension, ['DATE', 'FORMAT', 'COUNTRY', 'AD_UNIT'], true)) {
+            if (!in_array($range, ['7', '30'], true) || !in_array($dimension, $dimensions, true)) {
                 fail(422, 'Choose a valid report period and breakdown.');
             }
             if (($_SESSION['report_allowed_after'] ?? 0) > time()) {
                 fail(429, 'Wait a few seconds before generating another report.');
             }
             $_SESSION['report_allowed_after'] = time() + 20;
-            session_write_close();
             $days = (int)$range;
             $report = admobReport($days, $dimension);
+            $_SESSION['last_admob_report'] = ['dimension' => $dimension, 'generated' => gmdate('Y-m-d H:i'), 'data' => $report];
         }
-        renderAdmobPage($report, $days, $dimension);
+        renderAdmobPage($admin, $report, $days, $dimension);
         exit;
     }
     if ($method === 'POST') {
+        if ($path !== '/admin') {
+            fail(405, 'Method not allowed.');
+        }
+        if (($_POST['action'] ?? '') === 'review-banner') {
+            [$enabled, $unit] = bannerInput();
+            $current = row('SELECT * FROM ad_settings WHERE id=1') ?? fail(503, 'Banner configuration unavailable.');
+            if ((int)$current['version'] !== formId('version')) {
+                fail(409, 'The banner configuration changed. Review the latest settings before publishing.');
+            }
+            $_SESSION['banner_draft'] = [(int)$current['version'], $enabled, $unit];
+            placementsPage($admin, $current, [$enabled, $unit]);
+            exit;
+        }
+        if (($_POST['action'] ?? '') === 'banner' && ($_SESSION['banner_draft'] ?? null) !== [formId('version'), ...bannerInput()]) {
+            fail(409, 'Review the banner changes before publishing.');
+        }
         adminAction((int)$admin['id']);
-        redirect('/admin');
+        if (($_POST['action'] ?? '') === 'banner') {
+            unset($_SESSION['banner_draft']);
+        }
+        redirect(($_POST['action'] ?? '') === 'banner' ? '/admin?view=placements&saved=1' : '/admin?view=tournaments');
+    }
+    if (in_array($view, ['placements', 'revenue', 'traffic', 'formats', 'diagnostics', 'settings'], true)) {
+        if ($view === 'placements') {
+            $ads = row('SELECT * FROM ad_settings WHERE id=1') ?? fail(503, 'Banner configuration unavailable.');
+            placementsPage($admin, $ads, null, ($_GET['saved'] ?? '') === '1');
+        } else {
+            infoPage($admin, $view);
+        }
+        exit;
+    }
+    if ($view === 'overview' && !isset($_GET['tournament'])) {
+        overviewPage($admin, ($_GET['demo'] ?? '') === '1');
+        exit;
+    }
+    if (!in_array($view, ['overview', 'tournaments', 'audit'], true)) {
+        fail(404, 'Page unavailable.');
     }
     $selected = $_GET['tournament'] ?? null;
     $event = null;
@@ -124,7 +164,7 @@ try {
                                     WHERE tournament_id=? ORDER BY users.id', [$id])->fetchAll();
         $event['matches'] = query('SELECT * FROM matches WHERE tournament_id=? ORDER BY round_number,position', [$id])->fetchAll();
     }
-    dashboard($admin, $event);
+    dashboard($admin, $event, $view === 'audit');
 } catch (Throwable $error) {
     $status = $error instanceof HttpError ? $error->getCode() : 500;
     $message = $error instanceof HttpError ? $error->getMessage() : 'Request failed. Try again later.';
@@ -135,7 +175,9 @@ try {
         json(['error' => $message], $status);
     }
     http_response_code($status);
-    page('Request could not be completed', function () use ($message) {
-        echo '<p>' . h($message) . '</p><a href="/">Return to dashboard</a>';
+    page('Request could not be completed', function () use ($message, $path) {
+        echo '<p>' . h($message) . '</p>';
+        echo in_array($path, ['/login', '/register', '/account', '/logout'], true)
+            ? '<a href="/login">Return to player sign in</a>' : '<a href="/admin">Return to dashboard</a>';
     });
 }

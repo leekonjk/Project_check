@@ -114,6 +114,102 @@ function credentials(array $data): array
     return $user;
 }
 
+function startWebSession(string $role, bool $secure): void
+{
+    ini_set('session.use_strict_mode', '1');
+    ini_set('session.use_only_cookies', '1');
+    session_name(($secure ? '__Host-' : '') . 'football_' . $role);
+    session_set_cookie_params(['path' => '/', 'secure' => $secure, 'httponly' => true, 'samesite' => 'Strict']);
+    if (!session_start()) {
+        fail(503, 'Could not start your session.');
+    }
+    $_SESSION['csrf'] ??= bin2hex(random_bytes(32));
+}
+
+function checkWebForm(): void
+{
+    if (!is_string($_POST['csrf'] ?? null) || !hash_equals($_SESSION['csrf'], $_POST['csrf'])) {
+        fail(403, 'Your form expired. Reload the page and try again.');
+    }
+}
+
+function endWebSession(): void
+{
+    $cookie = session_get_cookie_params();
+    $_SESSION = [];
+    session_destroy();
+    setcookie(session_name(), '', ['expires' => 1, 'path' => '/', 'secure' => $cookie['secure'],
+        'httponly' => true, 'samesite' => 'Strict']);
+}
+
+function playerWeb(string $path, string $method, bool $secure): never
+{
+    startWebSession('player', $secure);
+    if ($method === 'POST') {
+        checkWebForm();
+    }
+    if ($path === '/logout') {
+        if ($method !== 'POST') {
+            fail(405, 'Method not allowed.');
+        }
+        endWebSession();
+        redirect('/login');
+    }
+
+    $account = null;
+    if (isset($_SESSION['player']) && ($_SESSION['expires'] ?? 0) > time()) {
+        $account = row('SELECT id,email FROM users WHERE id=? AND is_admin=FALSE', [$_SESSION['player']]);
+    }
+    if ($path === '/account') {
+        if ($method !== 'GET') {
+            fail(405, 'Method not allowed.');
+        }
+        if (!$account) {
+            redirect('/login');
+        }
+        playerAccountPage($account);
+        exit;
+    }
+    if ($account) {
+        redirect('/account');
+    }
+
+    $signUp = $path === '/register';
+    $error = '';
+    if ($method === 'POST') {
+        try {
+            if ($signUp) {
+                $password = field($_POST, 'password', 12, 128);
+                if ($password !== ($_POST['confirm_password'] ?? null)) {
+                    fail(422, 'Passwords must match.');
+                }
+                register($_POST);
+                $_SESSION['registered'] = true;
+                redirect('/login');
+            }
+            $user = credentials($_POST);
+            if ($user['is_admin']) {
+                fail(401, 'Invalid credentials.');
+            }
+            if (!session_regenerate_id(true)) {
+                fail(503, 'Could not start your session.');
+            }
+            $_SESSION = ['player' => (int)$user['id'], 'expires' => time() + 3600, 'csrf' => bin2hex(random_bytes(32))];
+            redirect('/account');
+        } catch (HttpError $failure) {
+            if (!in_array($failure->getCode(), [401, 422], true)) {
+                throw $failure;
+            }
+            http_response_code($failure->getCode());
+            $error = $failure->getMessage();
+        }
+    }
+    $registered = !$signUp && !empty($_SESSION['registered']);
+    unset($_SESSION['registered']);
+    playerAuthPage($signUp, $error, $registered);
+    exit;
+}
+
 function newTokens(int $userId, ?int $sessionId = null): array
 {
     $access = bin2hex(random_bytes(32));
