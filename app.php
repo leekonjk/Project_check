@@ -210,9 +210,65 @@ function playerWeb(string $path, string $method, bool $secure): never
     exit;
 }
 
+const PLAYER_ACCESS_SECONDS = 900;
+const PLAYER_JWT_HEADER = '{"alg":"HS256","typ":"at+jwt"}';
+const PLAYER_JWT_AUDIENCE = 'football-player-api';
+
+function playerJwtKey(): ?string
+{
+    $hex = setting('JWT_SIGNING_KEY');
+    if ($hex === '') {
+        return null;
+    }
+    if (!preg_match('/^[a-f0-9]{64}$/iD', $hex) || setting('APP_ORIGIN') === '') {
+        fail(503, 'Player token signing is not configured correctly.');
+    }
+    return hex2bin($hex);
+}
+
+function jwtBase64(string $data): string
+{
+    return rtrim(strtr(base64_encode($data), '+/', '-_'), '=');
+}
+
+function signPlayerAccess(int $userId, string $key, int $now): string
+{
+    $claims = jwtBase64(json_encode([
+        'iss' => setting('APP_ORIGIN'), 'aud' => PLAYER_JWT_AUDIENCE, 'sub' => (string)$userId,
+        'iat' => $now, 'exp' => $now + PLAYER_ACCESS_SECONDS, 'jti' => bin2hex(random_bytes(16)),
+    ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+    $message = jwtBase64(PLAYER_JWT_HEADER) . '.' . $claims;
+    return $message . '.' . jwtBase64(hash_hmac('sha256', $message, $key, true));
+}
+
+function verifyPlayerAccess(string $token, string $key, int $now): string
+{
+    $parts = explode('.', $token);
+    if (count($parts) !== 3 || $parts[0] !== jwtBase64(PLAYER_JWT_HEADER) || strlen($parts[1]) > 1024) {
+        fail(401, 'Session expired.');
+    }
+    [$header, $payload, $signature] = $parts;
+    $expected = jwtBase64(hash_hmac('sha256', $header . '.' . $payload, $key, true));
+    if (!hash_equals($expected, $signature)) {
+        fail(401, 'Session expired.');
+    }
+    $decoded = base64_decode(strtr($payload, '-_', '+/'), true);
+    $claims = $decoded === false ? null : json_decode($decoded, true, 8);
+    if (!is_array($claims) || ($claims['iss'] ?? null) !== setting('APP_ORIGIN')
+        || ($claims['aud'] ?? null) !== PLAYER_JWT_AUDIENCE
+        || !is_string($claims['sub'] ?? null) || !preg_match('/^[1-9][0-9]*$/D', $claims['sub'])
+        || !is_int($claims['iat'] ?? null) || !is_int($claims['exp'] ?? null)
+        || $claims['iat'] > $now || $claims['exp'] <= $now || $claims['exp'] - $claims['iat'] !== PLAYER_ACCESS_SECONDS
+        || !is_string($claims['jti'] ?? null) || !preg_match('/^[a-f0-9]{32}$/D', $claims['jti'])) {
+        fail(401, 'Session expired.');
+    }
+    return $claims['sub'];
+}
+
 function newTokens(int $userId, ?int $sessionId = null): array
 {
-    $access = bin2hex(random_bytes(32));
+    $key = playerJwtKey();
+    $access = $key === null ? bin2hex(random_bytes(32)) : signPlayerAccess($userId, $key, time());
     $refresh = bin2hex(random_bytes(32));
     $values = [hash('sha256', $access), hash('sha256', $refresh)];
     if ($sessionId === null) {
@@ -223,18 +279,28 @@ function newTokens(int $userId, ?int $sessionId = null): array
         query('UPDATE sessions SET access_hash=?,refresh_hash=?,access_until=UTC_TIMESTAMP()+INTERVAL 15 MINUTE WHERE id=?',
             [...$values, $sessionId]);
     }
-    return ['access_token' => $access, 'refresh_token' => $refresh, 'expires_in' => 900];
+    return ['access_token' => $access, 'refresh_token' => $refresh, 'expires_in' => PLAYER_ACCESS_SECONDS];
 }
 
 function player(): array
 {
     $authorization = $_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '';
-    if (!preg_match('/^Bearer ([a-f0-9]{64})$/iD', $authorization, $match)) {
+    if (!preg_match('/^Bearer ([A-Za-z0-9_.-]{1,1200})$/iD', $authorization, $match)) {
         fail(401, 'Sign in to continue.');
     }
-    return row('SELECT users.id,users.email,sessions.id AS session_id FROM sessions JOIN users ON users.id=sessions.user_id
+    $token = $match[1];
+    $subject = null;
+    if (!preg_match('/^[a-f0-9]{64}$/D', $token)) {
+        $key = playerJwtKey() ?? fail(401, 'Session expired.');
+        $subject = verifyPlayerAccess($token, $key, time());
+    }
+    $user = row('SELECT users.id,users.email,sessions.id AS session_id FROM sessions JOIN users ON users.id=sessions.user_id
                 WHERE access_hash=? AND access_until>UTC_TIMESTAMP() AND refresh_until>UTC_TIMESTAMP()',
-        [hash('sha256', $match[1])]) ?? fail(401, 'Session expired.');
+        [hash('sha256', $token)]) ?? fail(401, 'Session expired.');
+    if ($subject !== null && $subject !== (string)$user['id']) {
+        fail(401, 'Session expired.');
+    }
+    return $user;
 }
 
 function tournament(int $id, bool $lock = false): array

@@ -69,6 +69,10 @@ The app's Google sample ad units are for device testing. Use a real app ID for r
 
 Send JSON with `Content-Type: application/json`. Protected routes use `Authorization: Bearer <access_token>`. Keep refresh tokens in secure device storage. The client must serialize token refreshes and save both returned tokens because each successful refresh rotates the pair.
 
+Set `JWT_SIGNING_KEY` in the private `config.local.php` or Compose environment to enable signed 15-minute player access tokens. Generate a server-only key with `openssl rand -hex 32` and keep `APP_ORIGIN` set to the public origin. API clients should treat access tokens as opaque strings. Refresh tokens remain random and rotate on each refresh. The server checks the access token against the active database session so logout and refresh revoke old access immediately. Already-issued legacy access tokens continue until their normal expiry. With no key configured, the API keeps issuing the existing random tokens. Browser login still uses secure PHP session cookies.
+
+Open **Ad monitoring** in the admin dashboard to see the banner configuration version, last publish, and delivery metrics from the latest AdMob report generated in your admin session.
+
 | Method and route | Request or behavior |
 | --- | --- |
 | GET `/api/v1/ads/config?platform=android` | Public versioned banner configuration |

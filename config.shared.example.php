@@ -7,6 +7,7 @@ return [
     'MYSQL_USER' => 'account_football',
     'MYSQL_PASSWORD' => '',
     'APP_ORIGIN' => 'https://football.example.com',
+    'JWT_SIGNING_KEY' => '',
     'ADMIN_ALLOWED_IPS' => '',
     'ADMOB_PUBLISHER_ID' => '',
     'ADMOB_APP_ID' => '',

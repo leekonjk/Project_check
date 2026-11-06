@@ -96,6 +96,19 @@ progress::-moz-progress-bar { border-radius: 1rem; background: var(--green); }
 .detail-list > div { padding: .45rem 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
 .detail-list dt { color: var(--muted); }
 .detail-list dd { margin: 0; }
+.monitor-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: .75rem; }
+.monitor-metrics div { padding: .75rem 0; border-top: 1px solid var(--line); }
+.monitor-metrics dt { color: var(--muted); font-size: .9rem; }
+.monitor-metrics dd { margin: .2rem 0 0; font-size: 1.35rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+@media (hover: hover) and (pointer: fine) {
+    button:hover, .button:hover { background: #116741; }
+    .secondary:hover { background: #edf4ef; }
+}
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+    button, .button { transition: background-color .14s ease, transform .14s ease; }
+    button:hover, .button:hover { transform: translateY(-1px); }
+    button:active, .button:active { transform: translateY(1px); }
+}
 .skip-link { position: absolute; left: .5rem; top: .5rem; transform: translateY(-180%); z-index: 2; background: #fff; padding: .5rem; }
 .skip-link:focus { transform: none; }
 

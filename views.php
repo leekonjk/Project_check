@@ -78,7 +78,7 @@ function adminPage(string $title, string $description, string $active, array $ad
         'formats' => ['Ad Formats', '/admin?view=formats'],
         'placements' => ['Placements', '/admin?view=placements'],
         'reports' => ['Reports', '/admin/reports'],
-        'diagnostics' => ['Diagnostics', '/admin?view=diagnostics'],
+        'diagnostics' => ['Ad monitoring', '/admin?view=diagnostics'],
         'tournaments' => ['Tournaments', '/admin?view=tournaments'],
         'audit' => ['Audit History', '/admin?view=audit'],
         'settings' => ['Settings', '/admin?view=settings'],
@@ -263,7 +263,7 @@ function infoPage(array $admin, string $view): void
         'revenue' => ['Revenue', 'Review estimated earnings for Football Android.'],
         'traffic' => ['Traffic', 'See where ad activity comes from and what player analytics still need.'],
         'formats' => ['Ad Formats', 'See the six formats supported by the Unity game.'],
-        'diagnostics' => ['Diagnostics', 'Check the banner endpoint and reporting connection.'],
+        'diagnostics' => ['Ad monitoring', 'Check the Android banner configuration and the latest AdMob delivery figures.'],
         'settings' => ['Settings', 'Manage your game’s reporting and configuration sources.'],
     ];
     [$title, $description] = $titles[$view];
@@ -311,16 +311,62 @@ function infoPage(array $admin, string $view): void
                   <p>Active players, sessions and retention require a game analytics source.</p></section></div>';
             return;
         }
+        if ($view === 'diagnostics') {
+            adMonitoring();
+            return;
+        }
         $configured = admobConfigured();
         echo '<div class="analytics-grid"><section><h2>AdMob Network</h2><p class="notice' . ($configured ? '' : ' warning') . '">' .
             ($configured ? 'Reporting credentials configured. Generate a report to check the connection.' : 'Reporting disconnected.') .
             '</p><a href="/admin/reports">Open reports</a></section><section><h2>Android banner</h2>
             <p>Inspect the PHP settings returned to the Unity app.</p>
             <a href="/api/v1/ads/config?platform=android">Check config endpoint</a></section></div>';
-        if ($view === 'diagnostics') {
-            echo '<p class="notice">Device config fetches, SDK errors, and rewarded completions require Unity telemetry.</p>';
-        }
     });
+}
+
+function adMonitoring(): void
+{
+    $banner = row('SELECT version,banner_enabled,banner_ad_unit_id FROM ad_settings WHERE id=1');
+    $cached = $_SESSION['last_admob_report'] ?? null;
+    $stats = $cached['data']['totals'] ?? null;
+    $published = row("SELECT created_at FROM audit_log WHERE action='banner.update' ORDER BY id DESC LIMIT 1");
+    echo '<div class="analytics-grid"><section><h2>AdMob Network</h2>';
+    if (!admobConfigured()) {
+        echo '<p class="notice warning">Reporting disconnected</p><p>Add AdMob reporting credentials in the private server configuration.</p>';
+    } elseif (!$stats) {
+        echo '<p class="notice">Credentials configured. Generate a report to verify the connection.</p>';
+    } else {
+        echo '<p class="notice">Last successful report in this session · ' . h($cached['generated']) .
+            ' UTC</p><p class="muted">' . h($cached['data']['period']) . '</p>';
+        $metrics = [
+            'Requests' => number_format($stats['requests']),
+            'Matched requests' => number_format($stats['matched']),
+            'Impressions' => number_format($stats['impressions']),
+            'Match rate' => reportRate($stats['matched'], $stats['requests']),
+            'Show rate' => reportRate($stats['impressions'], $stats['matched']),
+        ];
+        echo '<dl class="monitor-metrics">';
+        foreach ($metrics as $label => $value) {
+            echo '<div><dt>' . h($label) . '</dt><dd>' . h($value) . '</dd></div>';
+        }
+        echo '</dl>';
+        if ($cached['data']['warnings']) {
+            echo '<p class="notice warning">AdMob flagged this report. Check the report in AdMob before using these figures.</p>';
+        }
+    }
+    echo '<a class="button secondary" href="/admin/reports">Open AdMob reports</a></section>
+          <section><h2>Android banner config</h2>';
+    if (!$banner) {
+        echo '<p class="notice warning">Banner configuration unavailable</p>';
+    } else {
+        $mode = $banner['banner_ad_unit_id'] === 'ca-app-pub-3940256099942544/6300978111' ? 'Google test unit' : 'Custom unit';
+        echo '<p><span class="tag">' . ($banner['banner_enabled'] ? 'Enabled' : 'Disabled') . '</span></p>
+              <dl class="detail-list"><div><dt>Configuration version</dt><dd>' . h($banner['version']) . '</dd></div>
+              <div><dt>Ad unit mode</dt><dd>' . h($mode) . '</dd></div>
+              <div><dt>Last published</dt><dd>' . h($published['created_at'] ?? 'Initial configuration') . '</dd></div></dl>';
+    }
+    echo '<a href="/api/v1/ads/config?platform=android">Check PHP endpoint</a></section></div>
+          <p class="notice">Android SDK errors, per-device fetches, and reward completions need Unity telemetry. AdMob reports show aggregate delivery.</p>';
 }
 
 function dashboard(array $admin, ?array $selected, bool $auditOnly): void
